@@ -11,14 +11,15 @@ import (
 
 // Config menampung pengaturan runtime aplikasi
 type Config struct {
-	AppEnv       string // "local" atau "production"
-	Port         string
-	DBHost       string
-	DBPort       string
-	DBUser       string
-	DBPassword   string
-	DBName       string
-	GlobalSecret string
+	AppEnv           string // "local" atau "production"
+	Port             string
+	DBHost           string
+	DBPort           string
+	DBUser           string
+	DBPassword       string
+	DBName           string
+	GlobalSecret     string
+	LogRetentionDays int // Jumlah hari retensi penyimpanan log di database
 }
 
 // LoadConfig memuat konfigurasi dari file .env (jika ada) dan environment variables dengan nilai default
@@ -31,14 +32,15 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		AppEnv:       getEnv("APP_ENV", "local"),
-		Port:         getEnv("APP_PORT", "8080"),
-		DBHost:       getEnv("DB_HOST", "127.0.0.1"),
-		DBPort:       getEnv("DB_PORT", "3306"),
-		DBUser:       getEnv("DB_USER", "root"),
-		DBPassword:   getEnv("DB_PASSWORD", ""),
-		DBName:       getEnv("DB_NAME", "github_webhook"),
-		GlobalSecret: getEnv("GLOBAL_WEBHOOK_SECRET", ""),
+		AppEnv:           getEnv("APP_ENV", "local"),
+		Port:             getEnv("APP_PORT", "8080"),
+		DBHost:           getEnv("DB_HOST", "127.0.0.1"),
+		DBPort:           getEnv("DB_PORT", "3306"),
+		DBUser:           getEnv("DB_USER", "root"),
+		DBPassword:       getEnv("DB_PASSWORD", ""),
+		DBName:           getEnv("DB_NAME", "github_webhook"),
+		GlobalSecret:     getEnv("GLOBAL_WEBHOOK_SECRET", ""),
+		LogRetentionDays: getEnvInt("LOG_RETENTION_DAYS", 7), // default 7 hari
 	}
 }
 

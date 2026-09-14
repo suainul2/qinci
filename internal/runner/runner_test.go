@@ -14,7 +14,7 @@ func TestRunPostCommands(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	r := NewRunner()
+	r := NewRunner(nil)
 
 	// Tes multi line commands dengan baris kosong dan baris komentar
 	commands := `
@@ -25,9 +25,9 @@ echo hello > output.txt
 echo world >> output.txt
 `
 	ctx := context.Background()
-	err = r.runPostCommands(ctx, tempDir, commands)
+	_, err = r.runPostCommandsWithOutput(ctx, tempDir, commands)
 	if err != nil {
-		t.Fatalf("runPostCommands gagal: %v", err)
+		t.Fatalf("runPostCommandsWithOutput gagal: %v", err)
 	}
 
 	content, err := os.ReadFile(filepath.Join(tempDir, "output.txt"))

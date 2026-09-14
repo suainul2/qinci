@@ -13,6 +13,7 @@ Aplikasi server berbasis **Golang** untuk menangani webhook GitHub (push event),
 - **Cross-Platform**: Eksekusi perintah otomatis mendeteksi shell host (`cmd.exe /C` di Windows atau `/bin/sh -c` di Linux/macOS).
 - **Multi-User Dashboard Web**: Setiap pengguna dapat mengelola repositori masing-masing secara terisolasi.
 - **Manual Trigger**: Fitur tombol **"Tarik Sekarang"** di web UI untuk menjalankan pull & build secara instan tanpa menunggu push webhook.
+- **Log Eksekusi Berbasis Database (Hitungan Hari)**: Seluruh riwayat eksekusi (status, durasi, output terminal, error) otomatis tersimpan ke tabel database `repository_logs` dengan retensi waktu yang dapat diatur via `.env` (misal 7 hari), serta pembersih otomatis (auto-purge background worker).
 - **Environment Mode**: Mendukung mode `local` dan `production` (pada mode `production`, pendaftaran akun baru `/register` otomatis diblokir).
 - **Keamanan Kredensial**: Password/Token disensor (`********`) pada setiap log stdout/stderr eksekusi git.
 

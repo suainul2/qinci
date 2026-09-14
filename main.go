@@ -45,12 +45,30 @@ func main() {
 	// 4. Inisialisasi komponen store, session manager, runner, dan handler
 	userStore := db.NewUserStore(database)
 	repoStore := db.NewRepositoryStore(database)
+	logStore := db.NewLogStore(database)
 	sessionManager := session.NewSessionManager(24 * time.Hour) // Sesi aktif 24 jam
-	commandRunner := runner.NewRunner()
+	commandRunner := runner.NewRunner(logStore)
 
 	authHandler := web.NewAuthHandler(cfg, userStore, sessionManager, tmpl)
-	repoHandler := web.NewRepoHandler(repoStore, commandRunner, tmpl)
+	repoHandler := web.NewRepoHandler(repoStore, logStore, commandRunner, tmpl)
 	webhookHandler := webhook.NewHandler(cfg, repoStore, commandRunner)
+
+	// Background worker untuk otomatis membersihkan log lama berdasarkan LOG_RETENTION_DAYS (setiap 6 jam)
+	go func() {
+		log.Printf("[LOG CLEANER] Rutinitas pembersih log aktif (retensi: %d hari)", cfg.LogRetentionDays)
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		// Jalankan sekali saat startup
+		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_, _ = logStore.PurgeOldLogs(cleanCtx, cfg.LogRetentionDays)
+		cancel()
+
+		for range ticker.C {
+			ctx, c := context.WithTimeout(context.Background(), 30*time.Second)
+			_, _ = logStore.PurgeOldLogs(ctx, cfg.LogRetentionDays)
+			c()
+		}
+	}()
 
 	// 5. Siapkan HTTP Server dan Routing
 	mux := http.NewServeMux()
@@ -129,6 +147,10 @@ func main() {
 		} else {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}
+	}))
+
+	mux.HandleFunc("/repos/logs", web.AuthMiddleware(sessionManager, func(w http.ResponseWriter, r *http.Request) {
+		repoHandler.ShowLogs(w, r)
 	}))
 
 	server := &http.Server{

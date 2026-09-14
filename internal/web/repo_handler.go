@@ -17,14 +17,16 @@ import (
 // RepoHandler mengelola halaman dashboard dan CRUD repositori user
 type RepoHandler struct {
 	repoStore *db.RepositoryStore
+	logStore  *db.LogStore
 	runner    *runner.Runner
 	tmpl      *template.Template
 }
 
 // NewRepoHandler membuat instance RepoHandler baru
-func NewRepoHandler(repoStore *db.RepositoryStore, r *runner.Runner, tmpl *template.Template) *RepoHandler {
+func NewRepoHandler(repoStore *db.RepositoryStore, logStore *db.LogStore, r *runner.Runner, tmpl *template.Template) *RepoHandler {
 	return &RepoHandler{
 		repoStore: repoStore,
+		logStore:  logStore,
 		runner:    r,
 		tmpl:      tmpl,
 	}
@@ -234,8 +236,37 @@ func (h *RepoHandler) HandleTriggerManual(w http.ResponseWriter, r *http.Request
 	go func(cfg model.RepositoryConfig) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		_ = h.runner.Execute(bgCtx, &cfg, cloneURL)
+		_ = h.runner.Execute(bgCtx, &cfg, cloneURL, "manual")
 	}(*repo)
 
 	http.Redirect(w, r, fmt.Sprintf("/?success=Trigger+manual+untuk+'%s'+telah+dijalankan+di+latar+belakang", repo.RepoName), http.StatusSeeOther)
+}
+
+// ShowLogs menampilkan riwayat eksekusi (log) dari repository tertentu
+func (h *RepoHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
+	user := GetUserFromContext(r)
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/?error=ID+repository+tidak+valid", http.StatusSeeOther)
+		return
+	}
+
+	repo, err := h.repoStore.FindByIDAndUserID(r.Context(), id, user.UserID)
+	if err != nil || repo == nil {
+		http.Redirect(w, r, "/?error=Repository+tidak+ditemukan", http.StatusSeeOther)
+		return
+	}
+
+	logs, err := h.logStore.FindByRepoID(r.Context(), repo.ID, 50)
+	if err != nil {
+		http.Error(w, "Gagal memuat log repository", http.StatusInternalServerError)
+		return
+	}
+
+	_ = h.tmpl.ExecuteTemplate(w, "logs.html", map[string]any{
+		"User": user,
+		"Repo": repo,
+		"Logs": logs,
+	})
 }

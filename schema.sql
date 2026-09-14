@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS `repositories` (
     CONSTRAINT `fk_repositories_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 3. Tabel Repository Logs untuk Merekam Hasil Eksekusi Pull & Build (Hitungan Hari)
+CREATE TABLE IF NOT EXISTS `repository_logs` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `repository_id` BIGINT NOT NULL COMMENT 'ID repository dari tabel repositories',
+    `trigger_type` VARCHAR(50) NOT NULL DEFAULT 'webhook' COMMENT 'Sumber pemicu: webhook atau manual',
+    `status` ENUM('success', 'failed') NOT NULL DEFAULT 'success' COMMENT 'Status eksekusi: success atau failed',
+    `output` MEDIUMTEXT NULL COMMENT 'Log lengkap hasil git pull dan custom post-commands',
+    `error_message` TEXT NULL COMMENT 'Pesan ringkas error jika gagal',
+    `duration_seconds` DECIMAL(10, 2) NOT NULL DEFAULT 0.00 COMMENT 'Durasi eksekusi dalam detik',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_repo_created` (`repository_id`, `created_at`),
+    CONSTRAINT `fk_logs_repository` FOREIGN KEY (`repository_id`) REFERENCES `repositories` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Contoh user default (password default: 'admin123', di-hash dengan bcrypt):
 -- INSERT INTO `users` (`username`, `password_hash`, `full_name`) 
 -- VALUES ('admin', '$2a$10$7R1Yk8k6Z2W8QcE3k8k6Ze1k8k6Z2W8QcE3k8k6Ze1k8k6Z2W8QcE', 'Administrator')

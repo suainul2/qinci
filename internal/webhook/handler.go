@@ -137,7 +137,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		bgCtx, bgCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer bgCancel()
 
-		if err := h.runner.Execute(bgCtx, &cfg, cloneURL); err != nil {
+		if err := h.runner.Execute(bgCtx, &cfg, cloneURL, "webhook"); err != nil {
 			log.Printf("[BACKGROUND ERROR] Eksekusi repo '%s' gagal: %v", cfg.RepoName, err)
 		} else {
 			log.Printf("[BACKGROUND SUCCESS] Eksekusi repo '%s' selesai dengan sukses.", cfg.RepoName)
