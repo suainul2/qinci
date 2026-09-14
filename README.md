@@ -164,6 +164,33 @@ Pada card repositori di Dashboard, Anda dapat menekan tombol **"Tarik Sekarang"*
 
 ---
 
+## ⚠️ Troubleshooting: Mengatasi Error `npm: not found` di Linux / Supervisord
+
+Jika Anda menjalankan aplikasi via **Supervisord**, **systemd**, atau background service di Linux dan mendapati error seperti:
+```text
+[COMMAND #1] Menjalankan: npm run build
+/bin/sh: 1: npm: not found
+[RUNNER FAILED] exit status error: exit status 127
+```
+
+### Solusi
+Jalankan perintah symlink berikut di terminal server Anda:
+```bash
+sudo ln -sf $(which node) /usr/bin/node
+sudo ln -sf $(which npm) /usr/bin/npm
+```
+Jika Anda menggunakan **Supervisord**, restart servicenya:
+```bash
+sudo supervisorctl restart qinci
+```
+
+### Mengapa Perlu Menjalankan Perintah Ini?
+1. **Node.js/NVM Terisolasi di Direktori User**: Saat Node.js diinstal menggunakan **NVM (Node Version Manager)**, binary `node` dan `npm` berada di dalam direktori profil user (contoh: `/root/.nvm/versions/node/v20.x.x/bin/`).
+2. **Environment `PATH` Terbatas pada Service Runner**: Supervisord atau service daemon Linux menjalankan child process shell non-interaktif (`/bin/sh`) dengan variabel `PATH` default sistem yang sangat minimal (biasanya hanya `/usr/local/bin:/usr/bin:/bin`) tanpa memuat environment dari `~/.bashrc` atau profil NVM user.
+3. **Fungsi Symlink (`ln -sf`)**: Perintah `sudo ln -sf $(which node) /usr/bin/node` dan `sudo ln -sf $(which npm) /usr/bin/npm` membuat jalan pintas (*symbolic link*) resmi langsung ke direktori global sistem `/usr/bin/`. Dengan demikian, shell non-interaktif yang dipanggil oleh Supervisord maupun aplikasi Go dapat langsung menemukan dan mengeksekusi binary `node` dan `npm` tanpa kendala `not found`.
+
+---
+
 ## 🧪 Menjalankan Pengujian Unit (Unit Tests)
 
 Aplikasi dilengkapi dengan test suite untuk memvalidasi algoritma verifikasi HMAC, shell command runner, dan proteksi middleware:
