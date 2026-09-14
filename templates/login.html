@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masuk - Qinci Webhook Puller</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 p-8">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 mb-4 border border-blue-500/30">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">Qinci Auto-Pull</h1>
+            <p class="text-slate-400 text-sm mt-1">Masuk untuk mengelola webhook & repository Anda</p>
+        </div>
+
+        {{ if .Error }}
+        <div class="mb-5 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span>{{ .Error }}</span>
+        </div>
+        {{ end }}
+
+        {{ if .Success }}
+        <div class="mb-5 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            <span>{{ .Success }}</span>
+        </div>
+        {{ end }}
+
+        <form action="/login" method="POST" class="space-y-5">
+            <div>
+                <label for="username" class="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username"
+                    class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                    placeholder="Masukkan username">
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password"
+                    class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                    placeholder="••••••••">
+            </div>
+
+            <button type="submit"
+                class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-600/30 transition duration-150 ease-in-out">
+                Masuk
+            </button>
+        </form>
+
+        {{ if not .IsProduction }}
+        <p class="mt-6 text-center text-sm text-slate-400">
+            Belum punya akun?
+            <a href="/register" class="text-blue-400 hover:text-blue-300 font-medium ml-1">Daftar sekarang</a>
+        </p>
+        {{ else }}
+        <p class="mt-6 text-center text-xs text-slate-500">
+            Mode Production: Pendaftaran publik dinonaktifkan.
+        </p>
+        {{ end }}
+    </div>
+</body>
+</html>
