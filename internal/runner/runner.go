@@ -188,9 +188,13 @@ func (r *Runner) runPostCommandsWithOutput(ctx context.Context, workingDir, comm
 		output, err := cmd.CombinedOutput()
 		duration := time.Since(startTime)
 
-		sb.WriteString(fmt.Sprintf("[COMMAND #%d OUTPUT] (%v):\n%s\n", lineNum, duration, string(output)))
+		outStr := strings.TrimSpace(string(output))
+		sb.WriteString(fmt.Sprintf("[COMMAND #%d OUTPUT] (%v):\n%s\n", lineNum, duration, outStr))
 
 		if err != nil {
+			if outStr != "" {
+				return sb.String(), fmt.Errorf("baris #%d ('%s') error: %s (%w)", lineNum, rawLine, outStr, err)
+			}
 			return sb.String(), fmt.Errorf("baris #%d ('%s') exit status error: %w", lineNum, rawLine, err)
 		}
 	}
