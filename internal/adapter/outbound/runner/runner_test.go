@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"qinci/internal/core/domain"
 )
 
 func TestRunPostCommands(t *testing.T) {
@@ -14,9 +17,8 @@ func TestRunPostCommands(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	r := NewRunner(nil)
+	r := NewRunner(nil, nil, nil)
 
-	// Tes multi line commands dengan baris kosong dan baris komentar
 	commands := `
 # ini komentar
 echo hello > output.txt
@@ -62,5 +64,36 @@ func TestMaskSensitive(t *testing.T) {
 	masked := maskSensitive(raw, "secret123")
 	if masked == raw {
 		t.Fatalf("sensitive password tidak tersensor")
+	}
+}
+
+func TestRunnerLock(t *testing.T) {
+	r := NewRunner(nil, nil, nil)
+	repo := &domain.RepositoryConfig{ID: 101, RepoName: "org/repo"}
+
+	l1 := r.getRepoLock(repo)
+	l2 := r.getRepoLock(repo)
+	if l1 != l2 {
+		t.Fatalf("expected identical mutex instance for the same repo")
+	}
+
+	l1.Lock()
+	acquired := make(chan bool)
+	go func() {
+		r.getRepoLock(repo).Lock()
+		acquired <- true
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatalf("lock was acquired while already held")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	l1.Unlock()
+	select {
+	case <-acquired:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("lock was not acquired after unlock")
 	}
 }

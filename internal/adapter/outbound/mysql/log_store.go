@@ -1,4 +1,4 @@
-package db
+package mysql
 
 import (
 	"context"
@@ -6,21 +6,21 @@ import (
 	"fmt"
 	"log"
 
-	"qinci/internal/model"
+	"qinci/internal/core/domain"
+	"qinci/internal/core/ports"
 )
 
-// LogStore bertanggung jawab atas operasi query dan pembersihan tabel repository_logs
 type LogStore struct {
 	db *sql.DB
 }
 
-// NewLogStore membuat instance LogStore baru
+var _ ports.LogStore = (*LogStore)(nil)
+
 func NewLogStore(db *sql.DB) *LogStore {
 	return &LogStore{db: db}
 }
 
-// Insert mencatat hasil eksekusi ke tabel repository_logs
-func (s *LogStore) Insert(ctx context.Context, l *model.RepositoryLog) error {
+func (s *LogStore) Insert(ctx context.Context, l *domain.RepositoryLog) error {
 	query := `
 		INSERT INTO repository_logs 
 			(repository_id, trigger_type, status, output, error_message, duration_seconds)
@@ -46,8 +46,7 @@ func (s *LogStore) Insert(ctx context.Context, l *model.RepositoryLog) error {
 	return nil
 }
 
-// FindByRepoID mengambil seluruh log dari suatu repository tertentu
-func (s *LogStore) FindByRepoID(ctx context.Context, repoID int64, limit int) ([]model.RepositoryLog, error) {
+func (s *LogStore) FindByRepoID(ctx context.Context, repoID int64, limit int) ([]domain.RepositoryLog, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -69,9 +68,9 @@ func (s *LogStore) FindByRepoID(ctx context.Context, repoID int64, limit int) ([
 	}
 	defer rows.Close()
 
-	var logs []model.RepositoryLog
+	var logs []domain.RepositoryLog
 	for rows.Next() {
-		var l model.RepositoryLog
+		var l domain.RepositoryLog
 		if err := rows.Scan(
 			&l.ID,
 			&l.RepositoryID,
@@ -90,7 +89,6 @@ func (s *LogStore) FindByRepoID(ctx context.Context, repoID int64, limit int) ([
 	return logs, rows.Err()
 }
 
-// PurgeOldLogs menghapus log di database yang usianya sudah melewati batas hari retensi (retentionDays)
 func (s *LogStore) PurgeOldLogs(ctx context.Context, retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
 		return 0, nil

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -9,20 +10,38 @@ import (
 	"testing"
 	"time"
 
-	"qinci/internal/config"
-	"qinci/internal/session"
+	"qinci/internal/adapter/outbound/session"
+	"qinci/internal/core/domain"
+	"qinci/internal/core/ports"
 )
 
-func TestAuthHandler_RegisterBlockedInProduction(t *testing.T) {
-	cfg := &config.Config{
-		AppEnv: "production",
-	}
+type mockAuthUsecase struct {
+	loginFn    func(ctx context.Context, username, password string) (*domain.User, error)
+	registerFn func(ctx context.Context, username, password, confirmPassword, fullName, telegramChatID string) (*domain.User, error)
+}
 
+func (m *mockAuthUsecase) Login(ctx context.Context, username, password string) (*domain.User, error) {
+	if m.loginFn != nil {
+		return m.loginFn(ctx, username, password)
+	}
+	return nil, nil
+}
+
+func (m *mockAuthUsecase) Register(ctx context.Context, username, password, confirmPassword, fullName, telegramChatID string) (*domain.User, error) {
+	if m.registerFn != nil {
+		return m.registerFn(ctx, username, password, confirmPassword, fullName, telegramChatID)
+	}
+	return nil, nil
+}
+
+var _ ports.AuthUsecase = (*mockAuthUsecase)(nil)
+
+func TestAuthHandler_RegisterBlockedInProduction(t *testing.T) {
 	tmpl := template.Must(template.New("dummy").Parse(""))
 	sm := session.NewSessionManager(1 * time.Hour)
-	handler := NewAuthHandler(cfg, nil, sm, tmpl)
+	mock := &mockAuthUsecase{}
+	handler := NewAuthHandler(mock, sm, tmpl, true)
 
-	// 1. Uji GET /register (harus redirect ke /login dengan pesan error)
 	reqGet := httptest.NewRequest(http.MethodGet, "/register", nil)
 	wGet := httptest.NewRecorder()
 	handler.ShowRegisterPage(wGet, reqGet)
@@ -36,7 +55,6 @@ func TestAuthHandler_RegisterBlockedInProduction(t *testing.T) {
 		t.Fatalf("diharapkan redirect ke /login dengan pesan production, didapat: %s", locGet)
 	}
 
-	// 2. Uji POST /register (harus langsung ditolak dan redirect ke /login)
 	formData := url.Values{}
 	formData.Set("username", "badactor")
 	formData.Set("password", "secret123")

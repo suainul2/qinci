@@ -1,25 +1,26 @@
-package db
+package mysql
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"qinci/internal/model"
+
+	"qinci/internal/core/domain"
+	"qinci/internal/core/ports"
 )
 
-// RepositoryStore bertanggung jawab atas operasi query tabel repositories
 type RepositoryStore struct {
 	db *sql.DB
 }
 
-// NewRepositoryStore membuat instance RepositoryStore baru
+var _ ports.RepositoryStore = (*RepositoryStore)(nil)
+
 func NewRepositoryStore(db *sql.DB) *RepositoryStore {
 	return &RepositoryStore{db: db}
 }
 
-// FindByRepoAndBranch mengambil konfigurasi repository aktif berdasarkan nama repo dan branch (digunakan oleh Webhook)
-func (s *RepositoryStore) FindByRepoAndBranch(ctx context.Context, repoName, branch string) (*model.RepositoryConfig, error) {
+func (s *RepositoryStore) FindByRepoAndBranch(ctx context.Context, repoName, branch string) (*domain.RepositoryConfig, error) {
 	query := `
 		SELECT 
 			id, user_id, repo_name, branch, username, password, 
@@ -30,7 +31,7 @@ func (s *RepositoryStore) FindByRepoAndBranch(ctx context.Context, repoName, bra
 		LIMIT 1
 	`
 
-	var repo model.RepositoryConfig
+	var repo domain.RepositoryConfig
 	err := s.db.QueryRowContext(ctx, query, repoName, branch).Scan(
 		&repo.ID,
 		&repo.UserID,
@@ -56,8 +57,7 @@ func (s *RepositoryStore) FindByRepoAndBranch(ctx context.Context, repoName, bra
 	return &repo, nil
 }
 
-// FindByUserID mengambil seluruh repositori milik user tertentu
-func (s *RepositoryStore) FindByUserID(ctx context.Context, userID int64) ([]model.RepositoryConfig, error) {
+func (s *RepositoryStore) FindByUserID(ctx context.Context, userID int64) ([]domain.RepositoryConfig, error) {
 	query := `
 		SELECT 
 			id, user_id, repo_name, branch, username, password, 
@@ -74,9 +74,9 @@ func (s *RepositoryStore) FindByUserID(ctx context.Context, userID int64) ([]mod
 	}
 	defer rows.Close()
 
-	var list []model.RepositoryConfig
+	var list []domain.RepositoryConfig
 	for rows.Next() {
-		var repo model.RepositoryConfig
+		var repo domain.RepositoryConfig
 		if err := rows.Scan(
 			&repo.ID,
 			&repo.UserID,
@@ -99,8 +99,7 @@ func (s *RepositoryStore) FindByUserID(ctx context.Context, userID int64) ([]mod
 	return list, rows.Err()
 }
 
-// FindByIDAndUserID mengambil satu repo berdasarkan ID dan kepemilikan UserID
-func (s *RepositoryStore) FindByIDAndUserID(ctx context.Context, id, userID int64) (*model.RepositoryConfig, error) {
+func (s *RepositoryStore) FindByIDAndUserID(ctx context.Context, id, userID int64) (*domain.RepositoryConfig, error) {
 	query := `
 		SELECT 
 			id, user_id, repo_name, branch, username, password, 
@@ -111,7 +110,7 @@ func (s *RepositoryStore) FindByIDAndUserID(ctx context.Context, id, userID int6
 		LIMIT 1
 	`
 
-	var repo model.RepositoryConfig
+	var repo domain.RepositoryConfig
 	err := s.db.QueryRowContext(ctx, query, id, userID).Scan(
 		&repo.ID,
 		&repo.UserID,
@@ -137,8 +136,7 @@ func (s *RepositoryStore) FindByIDAndUserID(ctx context.Context, id, userID int6
 	return &repo, nil
 }
 
-// Create menyimpan konfigurasi repository baru untuk seorang user
-func (s *RepositoryStore) Create(ctx context.Context, repo *model.RepositoryConfig) error {
+func (s *RepositoryStore) Create(ctx context.Context, repo *domain.RepositoryConfig) error {
 	query := `
 		INSERT INTO repositories 
 			(user_id, repo_name, branch, username, password, relative_path, webhook_secret, post_commands, is_active)
@@ -167,13 +165,11 @@ func (s *RepositoryStore) Create(ctx context.Context, repo *model.RepositoryConf
 	return nil
 }
 
-// Update memperbarui data repository
-func (s *RepositoryStore) Update(ctx context.Context, repo *model.RepositoryConfig) error {
+func (s *RepositoryStore) Update(ctx context.Context, repo *domain.RepositoryConfig) error {
 	var query string
 	var args []any
 
 	if repo.Password != "" {
-		// Update beserta password baru
 		query = `
 			UPDATE repositories 
 			SET repo_name = ?, branch = ?, username = ?, password = ?, relative_path = ?, webhook_secret = ?, post_commands = ?, is_active = ?
@@ -185,7 +181,6 @@ func (s *RepositoryStore) Update(ctx context.Context, repo *model.RepositoryConf
 			repo.ID, repo.UserID,
 		}
 	} else {
-		// Update tanpa mengubah password yang sudah ada
 		query = `
 			UPDATE repositories 
 			SET repo_name = ?, branch = ?, username = ?, relative_path = ?, webhook_secret = ?, post_commands = ?, is_active = ?
@@ -202,7 +197,6 @@ func (s *RepositoryStore) Update(ctx context.Context, repo *model.RepositoryConf
 	return err
 }
 
-// Delete menghapus repository milik user
 func (s *RepositoryStore) Delete(ctx context.Context, id, userID int64) error {
 	query := `DELETE FROM repositories WHERE id = ? AND user_id = ?`
 	_, err := s.db.ExecContext(ctx, query, id, userID)

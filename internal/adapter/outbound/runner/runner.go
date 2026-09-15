@@ -12,26 +12,55 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
-	"qinci/internal/db"
-	"qinci/internal/model"
+	"qinci/internal/core/domain"
+	"qinci/internal/core/ports"
 )
 
-// Runner bertanggung jawab untuk menjalankan git pull dan rangkaian post commands
 type Runner struct {
-	logStore *db.LogStore
+	logStore ports.LogStore
+	userRepo ports.UserRepository
+	notifier ports.Notifier
+	mu       sync.Mutex
+	locks    map[string]*sync.Mutex
 }
 
-// NewRunner membuat instance Runner baru
-func NewRunner(logStore *db.LogStore) *Runner {
+var _ ports.CommandRunner = (*Runner)(nil)
+
+func NewRunner(logStore ports.LogStore, userRepo ports.UserRepository, notifier ports.Notifier) *Runner {
 	return &Runner{
 		logStore: logStore,
+		userRepo: userRepo,
+		notifier: notifier,
+		locks:    make(map[string]*sync.Mutex),
 	}
 }
 
-// Execute menjalankan proses git pull diikuti post_commands, dan mencatat log ke database
-func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, cloneURL, triggerType string) error {
+func (r *Runner) getRepoLock(repo *domain.RepositoryConfig) *sync.Mutex {
+	// ponytail: in-memory mutex map per repo key. Ceiling: single server process; upgrade path: database row lock atau redis distributed lock jika multi-instance.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := fmt.Sprintf("id:%d", repo.ID)
+	if repo.ID <= 0 {
+		key = "name:" + repo.RepoName
+	}
+
+	lk, exists := r.locks[key]
+	if !exists {
+		lk = &sync.Mutex{}
+		r.locks[key] = lk
+	}
+	return lk
+}
+
+func (r *Runner) Execute(ctx context.Context, repo *domain.RepositoryConfig, cloneURL, triggerType string) error {
+	lk := r.getRepoLock(repo)
+	lk.Lock()
+	defer lk.Unlock()
+
 	startTime := time.Now()
 	var fullLog strings.Builder
 	var execErr error
@@ -57,9 +86,8 @@ func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, clon
 			appendLog("[RUNNER SUCCESS] Selesai dengan sukses dalam %.2fs", duration)
 		}
 
-		// Simpan record ke database jika logStore tersedia dan ID repository valid
 		if r.logStore != nil && repo.ID > 0 {
-			repoLog := &model.RepositoryLog{
+			repoLog := &domain.RepositoryLog{
 				RepositoryID:    repo.ID,
 				TriggerType:     triggerType,
 				Status:          status,
@@ -73,9 +101,45 @@ func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, clon
 				log.Printf("[LOG ERROR] Gagal menyimpan log eksekusi ke database: %v", err)
 			}
 		}
+
+		if r.userRepo != nil && r.notifier != nil && repo.UserID > 0 {
+			go func() {
+				notifCtx, notifCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer notifCancel()
+
+				user, err := r.userRepo.FindByID(notifCtx, repo.UserID)
+				if err == nil && user != nil && user.TelegramChatID != "" {
+					var icon, statusText string
+					if status == "success" {
+						icon = "✅"
+						statusText = "SUKSES"
+					} else {
+						icon = "❌"
+						statusText = "GAGAL"
+					}
+
+					msg := fmt.Sprintf(
+						"%s <b>Eksekusi Repo: %s</b>\n\n"+
+							"📦 <b>Repository:</b> <code>%s</code>\n"+
+							"🌿 <b>Branch:</b> <code>%s</code>\n"+
+							"🎯 <b>Status:</b> %s\n"+
+							"⚡ <b>Pemicu:</b> %s\n"+
+							"⏱ <b>Durasi:</b> %.2f detik\n"+
+							"🕒 <b>Waktu:</b> %s",
+						icon, statusText, repo.RepoName, repo.Branch, statusText, triggerType, duration, time.Now().Format("02 Jan 15:04:05 MST"),
+					)
+					if errMsg != "" {
+						msg += fmt.Sprintf("\n\n⚠️ <b>Pesan Error:</b>\n<code>%s</code>", errMsg)
+					}
+
+					if err := r.notifier.Send(notifCtx, user.TelegramChatID, msg); err != nil {
+						log.Printf("[TELEGRAM NOTIFIER] Gagal mengirim notifikasi ke chat_id '%s': %v", user.TelegramChatID, err)
+					}
+				}
+			}()
+		}
 	}()
 
-	// 1. Validasi & resolve relative path ke absolute path
 	absPath, err := filepath.Abs(repo.RelativePath)
 	if err != nil {
 		execErr = fmt.Errorf("gagal menyelesaikan path '%s': %w", repo.RelativePath, err)
@@ -98,7 +162,6 @@ func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, clon
 		return execErr
 	}
 
-	// 2. Jalankan git pull
 	gitOut, err := r.runGitPull(ctx, repo, absPath, cloneURL)
 	if gitOut != "" {
 		appendLog("[GIT OUTPUT]\n%s", gitOut)
@@ -109,7 +172,6 @@ func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, clon
 	}
 	appendLog("[RUNNER] Git pull berhasil di '%s'", absPath)
 
-	// 3. Jalankan post commands jika ada
 	if strings.TrimSpace(repo.PostCommands) != "" {
 		cmdOut, err := r.runPostCommandsWithOutput(ctx, absPath, repo.PostCommands)
 		if cmdOut != "" {
@@ -126,16 +188,13 @@ func (r *Runner) Execute(ctx context.Context, repo *model.RepositoryConfig, clon
 	return nil
 }
 
-// runGitPull mengeksekusi git checkout & git pull dengan autentikasi HTTPS
-func (r *Runner) runGitPull(ctx context.Context, repo *model.RepositoryConfig, repoDir, cloneURL string) (string, error) {
-	// Pastikan berada di branch target
+func (r *Runner) runGitPull(ctx context.Context, repo *domain.RepositoryConfig, repoDir, cloneURL string) (string, error) {
 	checkoutCmd := exec.CommandContext(ctx, "git", "checkout", repo.Branch)
 	checkoutCmd.Dir = repoDir
 	if out, err := checkoutCmd.CombinedOutput(); err != nil {
 		return string(out), fmt.Errorf("git checkout %s error: %s (%w)", repo.Branch, string(out), err)
 	}
 
-	// Siapkan authenticated remote URL jika kredensial tersedia
 	pullArgs := []string{"pull"}
 	if repo.Username != "" && repo.Password != "" && cloneURL != "" {
 		authURL, err := buildAuthURL(cloneURL, repo.Username, repo.Password)
@@ -160,7 +219,6 @@ func (r *Runner) runGitPull(ctx context.Context, repo *model.RepositoryConfig, r
 	return maskSensitive(stdout.String(), repo.Password), nil
 }
 
-// runPostCommandsWithOutput menjalankan custom command baris demi baris dan mengumpulkan output
 func (r *Runner) runPostCommandsWithOutput(ctx context.Context, workingDir, commands string) (string, error) {
 	var sb strings.Builder
 	scanner := bufio.NewScanner(strings.NewReader(commands))
@@ -170,7 +228,6 @@ func (r *Runner) runPostCommandsWithOutput(ctx context.Context, workingDir, comm
 		lineNum++
 		rawLine := strings.TrimSpace(scanner.Text())
 
-		// Abaikan baris kosong atau baris komentar
 		if rawLine == "" || strings.HasPrefix(rawLine, "#") || strings.HasPrefix(rawLine, "//") {
 			continue
 		}
@@ -202,24 +259,20 @@ func (r *Runner) runPostCommandsWithOutput(ctx context.Context, workingDir, comm
 	return sb.String(), scanner.Err()
 }
 
-// buildShellCommand membuat command yang dibungkus shell sesuai OS host (Windows vs Unix/Linux)
 func buildShellCommand(ctx context.Context, commandStr, workingDir string) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 
 	if runtime.GOOS == "windows" {
-		// Gunakan cmd.exe /C di Windows
 		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", commandStr)
 	} else {
-		// Gunakan /bin/sh -c di Linux / MacOS
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", commandStr)
 	}
 
 	cmd.Dir = workingDir
-	cmd.Env = os.Environ() // mewarisi environment variables host termasuk PATH
+	cmd.Env = os.Environ()
 	return cmd, nil
 }
 
-// buildAuthURL menyisipkan username & password/PAT ke URL HTTPS
 func buildAuthURL(rawURL, username, password string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -229,7 +282,6 @@ func buildAuthURL(rawURL, username, password string) (string, error) {
 	return u.String(), nil
 }
 
-// maskSensitive menyamarkan password pada string log
 func maskSensitive(input, secret string) string {
 	if secret == "" {
 		return input

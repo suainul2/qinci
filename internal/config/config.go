@@ -20,6 +20,7 @@ type Config struct {
 	DBName           string
 	GlobalSecret     string
 	LogRetentionDays int // Jumlah hari retensi penyimpanan log di database
+	TelegramBotToken string
 }
 
 // LoadConfig memuat konfigurasi dari file .env (jika ada) dan environment variables dengan nilai default
@@ -41,6 +42,7 @@ func LoadConfig() *Config {
 		DBName:           getEnv("DB_NAME", "github_webhook"),
 		GlobalSecret:     getEnv("GLOBAL_WEBHOOK_SECRET", ""),
 		LogRetentionDays: getEnvInt("LOG_RETENTION_DAYS", 7), // default 7 hari
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
 	}
 }
 

@@ -219,12 +219,18 @@ qinci/
 │   └── form.html                      # Form tambah & edit repositori
 └── internal/
     ├── config/                        # Handler parsing environment & .env file
-    ├── db/                            # Koneksi MySQL & database stores (user & repo)
-    ├── model/                         # Struct entity User & RepositoryConfig
-    ├── runner/                        # Git pull engine & post-command executor
-    ├── session/                       # Session manager berbasis cookie HttpOnly aman
-    ├── web/                           # Handler web UI & middleware autentikasi
-    └── webhook/                       # Handler webhook GitHub & verifikasi HMAC-SHA256
+    ├── core/                          # Domain Core (Hexagonal Ports & Business Logic)
+    │   ├── domain/                    # Entity model & domain errors
+    │   ├── ports/                     # Inbound (usecases) & outbound (driven) interfaces
+    │   └── service/                   # Application usecases business logic
+    └── adapter/                       # Hexagonal Adapters
+        ├── inbound/
+        │   ├── web/                   # Web dashboard & auth HTTP handlers
+        │   └── webhook/               # GitHub push webhook handler
+        └── outbound/
+            ├── mysql/                 # MySQL database storage adapter
+            ├── runner/                # Shell & git command execution adapter
+            └── session/               # Cookie session adapter
 ```
 
 ---

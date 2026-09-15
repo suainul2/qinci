@@ -6,9 +6,13 @@ CREATE TABLE IF NOT EXISTS `users` (
     `username` VARCHAR(100) NOT NULL UNIQUE,
     `password_hash` VARCHAR(255) NOT NULL,
     `full_name` VARCHAR(150) NULL,
+    `telegram_chat_id` VARCHAR(64) NULL COMMENT 'Chat ID Telegram untuk notifikasi bot',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migrasi aman untuk database yang sudah ada:
+-- ALTER TABLE `users` ADD COLUMN `telegram_chat_id` VARCHAR(64) NULL AFTER `full_name`;
 
 -- 2. Tabel Repositories dengan Relasi ke Tabel Users (user_id)
 CREATE TABLE IF NOT EXISTS `repositories` (

@@ -10,7 +10,6 @@ import (
 
 const CookieName = "qinci_session"
 
-// SessionData menyimpan informasi user yang sedang login
 type SessionData struct {
 	UserID    int64
 	Username  string
@@ -19,21 +18,18 @@ type SessionData struct {
 	ExpiresAt time.Time
 }
 
-// SessionManager mengelola sesi login berbasis in-memory cookie
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]SessionData
 	duration time.Duration
 }
 
-// NewSessionManager membuat instance session manager
 func NewSessionManager(duration time.Duration) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]SessionData),
 		duration: duration,
 	}
 
-	// Rutin pembersih sesi kedaluwarsa setiap 15 menit
 	go func() {
 		ticker := time.NewTicker(15 * time.Minute)
 		for range ticker.C {
@@ -44,7 +40,6 @@ func NewSessionManager(duration time.Duration) *SessionManager {
 	return sm
 }
 
-// CreateSession membuat token sesi baru dan mengembalikan cookie http
 func (sm *SessionManager) CreateSession(w http.ResponseWriter, userID int64, username, fullName string) string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
@@ -75,7 +70,6 @@ func (sm *SessionManager) CreateSession(w http.ResponseWriter, userID int64, use
 	return token
 }
 
-// GetSession mengambil data sesi dari cookie request
 func (sm *SessionManager) GetSession(r *http.Request) (*SessionData, bool) {
 	cookie, err := r.Cookie(CookieName)
 	if err != nil || cookie.Value == "" {
@@ -98,7 +92,6 @@ func (sm *SessionManager) GetSession(r *http.Request) (*SessionData, bool) {
 	return &data, true
 }
 
-// DestroySession menghapus sesi dan mencabut cookie
 func (sm *SessionManager) DestroySession(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil && cookie.Value != "" {
