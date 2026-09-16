@@ -97,3 +97,64 @@ func TestRunnerLock(t *testing.T) {
 		t.Fatalf("lock was not acquired after unlock")
 	}
 }
+
+func TestRunnerCoalesceQueue(t *testing.T) {
+	r := NewRunner(nil, nil, nil)
+	repo := &domain.RepositoryConfig{ID: 202, RepoName: "org/coalesce"}
+
+	q := r.getRepoQueue(repo)
+	q.mu.Lock()
+	q.running = true
+	q.mu.Unlock()
+
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- r.Execute(context.Background(), repo, "url1", "webhook")
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	q.mu.Lock()
+	if q.pending == nil {
+		q.mu.Unlock()
+		t.Fatalf("expected run to be queued as pending")
+	}
+	if q.pending.triggerType != "webhook" {
+		q.mu.Unlock()
+		t.Fatalf("expected pending triggerType to be webhook")
+	}
+	q.mu.Unlock()
+
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- r.Execute(context.Background(), repo, "url2", "manual")
+	}()
+
+	select {
+	case err := <-done1:
+		if err != nil {
+			t.Fatalf("superseded pending call should receive nil, got: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for superseded pending to unblock")
+	}
+
+	q.mu.Lock()
+	if q.pending == nil || q.pending.triggerType != "manual" {
+		q.mu.Unlock()
+		t.Fatalf("expected latest pending triggerType to be manual")
+	}
+	nextDone := q.pending.done
+	q.pending = nil
+	q.running = false
+	q.mu.Unlock()
+
+	nextDone <- nil
+	select {
+	case err := <-done2:
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for done2")
+	}
+}

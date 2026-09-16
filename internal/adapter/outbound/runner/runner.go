@@ -19,12 +19,26 @@ import (
 	"qinci/internal/core/ports"
 )
 
+type repoRunItem struct {
+	ctx         context.Context
+	repo        *domain.RepositoryConfig
+	cloneURL    string
+	triggerType string
+	done        chan error
+}
+
+type repoQueue struct {
+	mu      sync.Mutex
+	running bool
+	pending *repoRunItem
+}
+
 type Runner struct {
 	logStore ports.LogStore
 	userRepo ports.UserRepository
 	notifier ports.Notifier
 	mu       sync.Mutex
-	locks    map[string]*sync.Mutex
+	queues   map[string]*repoQueue
 }
 
 var _ ports.CommandRunner = (*Runner)(nil)
@@ -34,12 +48,12 @@ func NewRunner(logStore ports.LogStore, userRepo ports.UserRepository, notifier 
 		logStore: logStore,
 		userRepo: userRepo,
 		notifier: notifier,
-		locks:    make(map[string]*sync.Mutex),
+		queues:   make(map[string]*repoQueue),
 	}
 }
 
-func (r *Runner) getRepoLock(repo *domain.RepositoryConfig) *sync.Mutex {
-	// ponytail: in-memory mutex map per repo key. Ceiling: single server process; upgrade path: database row lock atau redis distributed lock jika multi-instance.
+func (r *Runner) getRepoQueue(repo *domain.RepositoryConfig) *repoQueue {
+	// ponytail: in-memory queue map per repo key. Ceiling: single server process; upgrade path: redis queue / distributed worker.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -48,18 +62,80 @@ func (r *Runner) getRepoLock(repo *domain.RepositoryConfig) *sync.Mutex {
 		key = "name:" + repo.RepoName
 	}
 
-	lk, exists := r.locks[key]
+	q, exists := r.queues[key]
 	if !exists {
-		lk = &sync.Mutex{}
-		r.locks[key] = lk
+		q = &repoQueue{}
+		r.queues[key] = q
 	}
-	return lk
+	return q
+}
+
+func (r *Runner) getRepoLock(repo *domain.RepositoryConfig) *sync.Mutex {
+	return &r.getRepoQueue(repo).mu
 }
 
 func (r *Runner) Execute(ctx context.Context, repo *domain.RepositoryConfig, cloneURL, triggerType string) error {
-	lk := r.getRepoLock(repo)
-	lk.Lock()
-	defer lk.Unlock()
+	q := r.getRepoQueue(repo)
+	q.mu.Lock()
+
+	if q.running {
+		log.Printf("[RUNNER] Repo '%s' sedang berjalan. Eksekusi digabung (coalesced) ke antrean berikutnya.", repo.RepoName)
+		doneCh := make(chan error, 1)
+		if q.pending != nil {
+			q.pending.done <- nil
+		}
+		q.pending = &repoRunItem{
+			ctx:         ctx,
+			repo:        repo,
+			cloneURL:    cloneURL,
+			triggerType: triggerType,
+			done:        doneCh,
+		}
+		q.mu.Unlock()
+
+		select {
+		case err := <-doneCh:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	q.running = true
+	q.mu.Unlock()
+
+	currentCtx := ctx
+	currentRepo := repo
+	currentURL := cloneURL
+	currentType := triggerType
+	var currentDone chan error
+
+	for {
+		execErr := r.executeRun(currentCtx, currentRepo, currentURL, currentType)
+		if currentDone != nil {
+			currentDone <- execErr
+		}
+
+		q.mu.Lock()
+		if q.pending == nil {
+			q.running = false
+			q.mu.Unlock()
+			return execErr
+		}
+
+		next := q.pending
+		q.pending = nil
+		q.mu.Unlock()
+
+		currentCtx = next.ctx
+		currentRepo = next.repo
+		currentURL = next.cloneURL
+		currentType = next.triggerType
+		currentDone = next.done
+	}
+}
+
+func (r *Runner) executeRun(ctx context.Context, repo *domain.RepositoryConfig, cloneURL, triggerType string) error {
 
 	startTime := time.Now()
 	var fullLog strings.Builder
