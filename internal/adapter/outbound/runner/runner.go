@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -341,11 +342,36 @@ func buildShellCommand(ctx context.Context, commandStr, workingDir string) (*exe
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", commandStr)
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", commandStr)
+		shell := "/bin/bash"
+		args := []string{"-l", "-c", commandStr}
+		if _, err := exec.LookPath("bash"); err != nil {
+			if _, err := os.Stat("/bin/bash"); err != nil {
+				shell = "/bin/sh"
+				args = []string{"-c", commandStr}
+			}
+		}
+		cmd = exec.CommandContext(ctx, shell, args...)
 	}
 
 	cmd.Dir = workingDir
-	cmd.Env = os.Environ()
+
+	env := os.Environ()
+	if runtime.GOOS != "windows" {
+		// ponytail: fallback home & standard paths when daemon strips env. Ceiling: common dev locations; upgrade path: custom env config.
+		hasHome := false
+		for _, e := range env {
+			if strings.HasPrefix(e, "HOME=") && len(e) > 5 {
+				hasHome = true
+				break
+			}
+		}
+		if !hasHome {
+			if u, err := user.Current(); err == nil && u.HomeDir != "" {
+				env = append(env, "HOME="+u.HomeDir)
+			}
+		}
+	}
+	cmd.Env = env
 	return cmd, nil
 }
 
