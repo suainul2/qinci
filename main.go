@@ -16,6 +16,7 @@ import (
 	"qinci/internal/adapter/outbound/runner"
 	"qinci/internal/adapter/outbound/session"
 	"qinci/internal/adapter/outbound/telegram"
+	"qinci/internal/adapter/outbound/github"
 	"qinci/internal/config"
 	"qinci/internal/core/service"
 )
@@ -51,11 +52,12 @@ func main() {
 	sessionManager := session.NewSessionManager(24 * time.Hour)
 	telegramNotifier := telegram.NewTelegramNotifier(cfg.TelegramBotToken)
 	commandRunner := runner.NewRunner(logStore, userRepo, telegramNotifier)
+	ghClient := github.NewClient()
 
 	// 5. Core Services (Application / Usecases)
 	authService := service.NewAuthService(userRepo, cfg.IsProduction())
 	userService := service.NewUserService(userRepo, telegramNotifier)
-	repoService := service.NewRepositoryService(repoStore, logStore, commandRunner)
+	repoService := service.NewRepositoryService(repoStore, logStore, commandRunner, ghClient)
 	webhookService := service.NewWebhookService(repoStore, commandRunner, cfg.GlobalSecret)
 
 	// 6. Inbound Adapters: HTTP Handlers
@@ -151,6 +153,14 @@ func main() {
 	mux.HandleFunc("/repos/trigger", web.AuthMiddleware(sessionManager, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			repoHandler.HandleTriggerManual(w, r)
+		} else {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		}
+	}))
+
+	mux.HandleFunc("/repos/sync-webhook", web.AuthMiddleware(sessionManager, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			repoHandler.HandleSyncWebhook(w, r)
 		} else {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}

@@ -78,6 +78,16 @@ func (h *RepoHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Jika user mencentang auto-sync webhook GitHub saat buat repo
+	if r.FormValue("sync_webhook") == "1" || r.FormValue("sync_webhook") == "on" {
+		scheme := "http"
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		baseURL := scheme + "://" + r.Host
+		_, _ = h.repoUsecase.SyncGitHubWebhook(r.Context(), repo.ID, user.UserID, baseURL)
+	}
+
 	http.Redirect(w, r, "/?success=Repository+berhasil+ditambahkan", http.StatusSeeOther)
 }
 
@@ -199,4 +209,33 @@ func (h *RepoHandler) ShowLogs(w http.ResponseWriter, r *http.Request) {
 		"Repo": repo,
 		"Logs": logs,
 	})
+}
+
+func (h *RepoHandler) HandleSyncWebhook(w http.ResponseWriter, r *http.Request) {
+	user := GetUserFromContext(r)
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/?error=Request+tidak+valid", http.StatusSeeOther)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/?error=ID+tidak+valid", http.StatusSeeOther)
+		return
+	}
+
+	// Tentukan base URL dari header host / scheme
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	baseURL := scheme + "://" + r.Host
+
+	msg, err := h.repoUsecase.SyncGitHubWebhook(r.Context(), id, user.UserID, baseURL)
+	if err != nil {
+		http.Redirect(w, r, "/?error="+strings.ReplaceAll(err.Error(), " ", "+"), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/?success="+strings.ReplaceAll(msg, " ", "+"), http.StatusSeeOther)
 }

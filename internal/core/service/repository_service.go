@@ -15,13 +15,15 @@ type RepositoryService struct {
 	repoStore ports.RepositoryStore
 	logStore  ports.LogStore
 	runner    ports.CommandRunner
+	ghClient  ports.GitHubWebhookManager
 }
 
-func NewRepositoryService(repoStore ports.RepositoryStore, logStore ports.LogStore, runner ports.CommandRunner) *RepositoryService {
+func NewRepositoryService(repoStore ports.RepositoryStore, logStore ports.LogStore, runner ports.CommandRunner, ghClient ports.GitHubWebhookManager) *RepositoryService {
 	return &RepositoryService{
 		repoStore: repoStore,
 		logStore:  logStore,
 		runner:    runner,
+		ghClient:  ghClient,
 	}
 }
 
@@ -112,4 +114,23 @@ func (s *RepositoryService) GetRepositoryLogs(ctx context.Context, repoID, userI
 	}
 
 	return repo, logs, nil
+}
+
+func (s *RepositoryService) SyncGitHubWebhook(ctx context.Context, id, userID int64, webhookBaseURL string) (string, error) {
+	repo, err := s.GetRepository(ctx, id, userID)
+	if err != nil {
+		return "", err
+	}
+	if repo == nil {
+		return "", domain.ErrNotFound
+	}
+
+	if s.ghClient == nil {
+		return "", fmt.Errorf("github client belum diinisialisasi")
+	}
+
+	webhookBaseURL = strings.TrimRight(strings.TrimSpace(webhookBaseURL), "/")
+	webhookURL := webhookBaseURL + "/webhook"
+
+	return s.ghClient.SyncWebhook(ctx, repo.Password, repo.RepoName, webhookURL, repo.WebhookSecret)
 }

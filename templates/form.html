@@ -112,12 +112,24 @@
                     <p class="text-xs text-slate-500 mt-1">Tiap baris perintah akan dieksekusi berurutan di dalam folder project setelah git pull sukses.</p>
                 </div>
 
-                <div class="flex items-center gap-3">
-                    <input type="checkbox" id="is_active" name="is_active" value="1" {{ if .Repo.IsActive }}checked{{ end }}
-                        class="w-4 h-4 text-blue-600 bg-slate-950 border-slate-700 rounded focus:ring-blue-500">
-                    <label for="is_active" class="text-sm font-medium text-slate-300 select-none cursor-pointer">
-                        Aktifkan webhook untuk repositori ini
-                    </label>
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" id="is_active" name="is_active" value="1" {{ if .Repo.IsActive }}checked{{ end }}
+                            class="w-4 h-4 text-blue-600 bg-slate-950 border-slate-700 rounded focus:ring-blue-500">
+                        <label for="is_active" class="text-sm font-medium text-slate-300 select-none cursor-pointer">
+                            Aktifkan repositori ini untuk menerima webhook
+                        </label>
+                    </div>
+
+                    {{ if not .IsEdit }}
+                    <div class="flex items-center gap-3 p-3 rounded-xl bg-purple-950/20 border border-purple-500/20">
+                        <input type="checkbox" id="sync_webhook" name="sync_webhook" value="1" checked
+                            class="w-4 h-4 text-purple-600 bg-slate-950 border-slate-700 rounded focus:ring-purple-500">
+                        <label for="sync_webhook" class="text-xs font-medium text-purple-300 select-none cursor-pointer">
+                            ⚡ Otomatis pasang Webhook ke GitHub Repository saat disimpan
+                        </label>
+                    </div>
+                    {{ end }}
                 </div>
 
                 <div class="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">

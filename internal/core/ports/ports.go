@@ -34,6 +34,10 @@ type CommandRunner interface {
 	Execute(ctx context.Context, repo *domain.RepositoryConfig, cloneURL, triggerType string) error
 }
 
+type GitHubWebhookManager interface {
+	SyncWebhook(ctx context.Context, token, repoName, webhookURL, secret string) (string, error)
+}
+
 type Notifier interface {
 	Send(ctx context.Context, recipient, message string) error
 }
@@ -59,6 +63,7 @@ type RepositoryUsecase interface {
 	DeleteRepository(ctx context.Context, id, userID int64) error
 	TriggerManual(ctx context.Context, id, userID int64) (*domain.RepositoryConfig, error)
 	GetRepositoryLogs(ctx context.Context, repoID, userID int64, limit int) (*domain.RepositoryConfig, []domain.RepositoryLog, error)
+	SyncGitHubWebhook(ctx context.Context, id, userID int64, webhookBaseURL string) (string, error)
 }
 
 type WebhookUsecase interface {
