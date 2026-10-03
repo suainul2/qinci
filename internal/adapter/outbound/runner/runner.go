@@ -343,11 +343,11 @@ func buildShellCommand(ctx context.Context, commandStr, workingDir string) (*exe
 		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", commandStr)
 	} else {
 		shell := "/bin/bash"
-		args := []string{"-l", "-c", commandStr}
+		args := []string{"-l", "-i", "+m", "-c", commandStr}
 		if _, err := exec.LookPath("bash"); err != nil {
 			if _, err := os.Stat("/bin/bash"); err != nil {
 				shell = "/bin/sh"
-				args = []string{"-c", commandStr}
+				args = []string{"-l", "-c", commandStr}
 			}
 		}
 		cmd = exec.CommandContext(ctx, shell, args...)
@@ -357,17 +357,22 @@ func buildShellCommand(ctx context.Context, commandStr, workingDir string) (*exe
 
 	env := os.Environ()
 	if runtime.GOOS != "windows" {
-		// ponytail: fallback home & standard paths when daemon strips env. Ceiling: common dev locations; upgrade path: custom env config.
-		hasHome := false
-		for _, e := range env {
-			if strings.HasPrefix(e, "HOME=") && len(e) > 5 {
-				hasHome = true
-				break
+		// ponytail: replicate login session env (HOME & USER). Ceiling: current user lookup; upgrade path: custom env profile.
+		if u, err := user.Current(); err == nil {
+			hasHome, hasUser := false, false
+			for _, e := range env {
+				if strings.HasPrefix(e, "HOME=") && len(e) > 5 {
+					hasHome = true
+				}
+				if strings.HasPrefix(e, "USER=") && len(e) > 5 {
+					hasUser = true
+				}
 			}
-		}
-		if !hasHome {
-			if u, err := user.Current(); err == nil && u.HomeDir != "" {
+			if !hasHome && u.HomeDir != "" {
 				env = append(env, "HOME="+u.HomeDir)
+			}
+			if !hasUser && u.Username != "" {
+				env = append(env, "USER="+u.Username)
 			}
 		}
 	}
